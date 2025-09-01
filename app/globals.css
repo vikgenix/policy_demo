@@ -1,26 +1,78 @@
 @import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-slate-50 via-red-50 to-slate-100 text-slate-800;
+    background-attachment: fixed;
+  }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #B20F38 transparent;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #B20F38;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #8A0C2D;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-[#B20F38] to-[#8A0C2D] hover:from-[#8A0C2D] hover:to-[#6A0923] text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border-0;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-gradient-to-r from-slate-200 to-slate-300 hover:from-slate-300 hover:to-slate-400 text-slate-700 rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border border-slate-400;
+  }
+
+  .card {
+    @apply bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-slate-200/50 shadow-lg hover:shadow-xl transition-all duration-300;
+  }
+
+  .glass-card {
+    @apply bg-white/90 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl;
+  }
+
+  .gradient-border {
+    @apply relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl p-[1px] bg-gradient-to-r from-[#B20F38] via-[#8A0C2D] to-[#B20F38];
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-[#B20F38] to-[#8A0C2D] bg-clip-text text-transparent;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-300 hover:transform hover:-translate-y-1 hover:shadow-2xl;
+  }
+
+  .glow {
+    box-shadow: 0 0 20px rgba(178, 15, 56, 0.3);
+  }
+
+  .glow:hover {
+    box-shadow: 0 0 30px rgba(178, 15, 56, 0.5);
+  }
 }
