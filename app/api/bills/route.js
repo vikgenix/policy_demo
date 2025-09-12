@@ -1,7 +1,9 @@
 import * as cheerio from "cheerio";
+import { promises as fs } from "fs";
+
+const baseUrl = "https://prsindia.org";
 
 export async function GET() {
-  const baseUrl = "https://prsindia.org";
   const url = `${baseUrl}/billtrack/`;
   const response = await fetch(url, { cache: "no-store" });
   const body = await response.text();
@@ -9,10 +11,16 @@ export async function GET() {
 
   let bills = [];
 
-  // Step 1: Collect bill titles + detail page links
+  // Step 1: Collect bill data directly from the main page
   $(".view-content .views-row").each((i, el) => {
     const billTitle = $(el).find("a").first().text().trim();
     const detailLink = $(el).find("a").first().attr("href");
+
+    // Scrape the status with the corrected selector
+    const statusText = $(el)
+      .find(".views-field-field-bill-status span")
+      .text()
+      .trim();
 
     if (billTitle && detailLink) {
       bills.push({
@@ -20,11 +28,12 @@ export async function GET() {
         title: billTitle,
         link: baseUrl + detailLink,
         pdf: null,
+        status: statusText,
       });
     }
   });
 
-  // Step 2: Visit each detail page for PDFs
+  // Step 2: Visit each detail page to scrape PDFs
   for (let bill of bills) {
     try {
       const res = await fetch(bill.link);
@@ -39,7 +48,15 @@ export async function GET() {
       console.error(`Error fetching ${bill.link}:`, err);
     }
   }
-  console.log(bills);
+
+  // Step 3: Store the data into a JSON file
+  const jsonData = JSON.stringify(bills, null, 2);
+  try {
+    await fs.writeFile("bills.json", jsonData);
+    console.log("Data successfully written to bills.json");
+  } catch (err) {
+    console.error("Error writing to file:", err);
+  }
 
   return new Response(JSON.stringify(bills), {
     headers: { "Content-Type": "application/json" },
