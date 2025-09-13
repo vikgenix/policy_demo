@@ -1,45 +1,336 @@
-// pages/index.js
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/router";
 import Head from "next/head";
+import { Loader2, FileText, MessageSquare, Brain } from "lucide-react";
+
+// Simple text formatter to handle basic markdown-like formatting
+const formatText = (text) => {
+  if (!text) return null;
+
+  // Split text into lines for processing
+  const lines = text.split("\n");
+  const elements = [];
+
+  lines.forEach((line, index) => {
+    // Handle headers
+    if (line.startsWith("**") && line.endsWith("**")) {
+      elements.push(
+        <h3 key={index} className="font-bold text-gray-800 mb-2 mt-3">
+          {line.slice(2, -2)}
+        </h3>
+      );
+    }
+    // Handle bullet points
+    else if (line.startsWith("• ") || line.startsWith("- ")) {
+      elements.push(
+        <div key={index} className="flex items-start mb-1">
+          <span className="text-gray-600 mr-2 mt-1">•</span>
+          <span className="text-gray-700">{line.slice(2)}</span>
+        </div>
+      );
+    }
+    // Handle numbered lists
+    else if (/^\d+\./.test(line.trim())) {
+      elements.push(
+        <div key={index} className="flex items-start mb-1">
+          <span className="text-gray-600 mr-2">{line.match(/^\d+\./)[0]}</span>
+          <span className="text-gray-700">{line.replace(/^\d+\.\s*/, "")}</span>
+        </div>
+      );
+    }
+    // Handle checkmarks and status
+    else if (
+      line.includes("✅") ||
+      line.includes("❌") ||
+      line.includes("🔄")
+    ) {
+      elements.push(
+        <div key={index} className="mb-2 font-medium text-gray-700">
+          {line}
+        </div>
+      );
+    }
+    // Handle regular paragraphs
+    else if (line.trim()) {
+      // Handle bold text within paragraphs
+      const formattedLine = line.split(/(\*\*.*?\*\*)/g).map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return (
+            <strong key={i} className="font-semibold text-gray-900">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        return part;
+      });
+
+      elements.push(
+        <p key={index} className="text-gray-700 mb-2 leading-relaxed">
+          {formattedLine}
+        </p>
+      );
+    }
+    // Handle empty lines (add spacing)
+    else {
+      elements.push(<div key={index} className="mb-2"></div>);
+    }
+  });
+
+  return <div className="text-sm">{elements}</div>;
+};
 
 const ChatInterface = () => {
   const [pdfLink, setPdfLink] = useState("");
+  const [billId, setBillId] = useState("");
+  const [billTitle, setBillTitle] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processed, setProcessed] = useState(false);
+  const messagesEndRef = useRef(null);
 
-  // Read PDF from query string manually
+  // Custom text formatter function
+  const formatText = (text) => {
+    if (!text) return null;
+
+    // Split text into lines and process each line
+    const lines = text.split("\n");
+    const formattedElements = [];
+
+    lines.forEach((line, lineIndex) => {
+      let processedLine = line.trim();
+
+      if (!processedLine) {
+        // Empty line - add spacing
+        formattedElements.push(<br key={`br-${lineIndex}`} />);
+        return;
+      }
+
+      // Handle different formatting patterns
+      let className = "text-sm text-gray-700 mb-2";
+      let element = "p";
+
+      // Headers (lines starting with ##, ###, etc.)
+      if (processedLine.startsWith("###")) {
+        processedLine = processedLine.replace(/^###\s*/, "");
+        className = "text-sm font-medium text-gray-800 mb-2";
+        element = "h3";
+      } else if (processedLine.startsWith("##")) {
+        processedLine = processedLine.replace(/^##\s*/, "");
+        className = "text-base font-semibold text-gray-800 mb-2";
+        element = "h2";
+      } else if (processedLine.startsWith("#")) {
+        processedLine = processedLine.replace(/^#\s*/, "");
+        className = "text-lg font-bold text-gray-800 mb-3";
+        element = "h1";
+      }
+      // Bold text patterns (**text** or __text__)
+      else if (processedLine.startsWith("**") && processedLine.endsWith("**")) {
+        processedLine = processedLine.replace(/^\*\*|\*\*$/g, "");
+        className = "text-sm font-semibold text-gray-900 mb-2";
+      }
+      // List items (- or •)
+      else if (
+        processedLine.startsWith("- ") ||
+        processedLine.startsWith("• ")
+      ) {
+        processedLine = processedLine.replace(/^[-•]\s*/, "");
+        className = "text-sm text-gray-700 mb-1 ml-4 relative";
+        element = "li";
+      }
+      // Numbered lists
+      else if (/^\d+\.\s/.test(processedLine)) {
+        className = "text-sm text-gray-700 mb-1 ml-4";
+        element = "li";
+      }
+
+      // Process inline formatting within the line
+      const processInlineFormatting = (text) => {
+        const parts = [];
+        let remaining = text;
+        let key = 0;
+
+        while (remaining.length > 0) {
+          // Bold text **text**
+          const boldMatch = remaining.match(/\*\*(.*?)\*\*/);
+          if (boldMatch) {
+            const beforeBold = remaining.substring(0, boldMatch.index);
+            if (beforeBold) parts.push(<span key={key++}>{beforeBold}</span>);
+            parts.push(
+              <strong key={key++} className="font-semibold text-gray-900">
+                {boldMatch[1]}
+              </strong>
+            );
+            remaining = remaining.substring(
+              boldMatch.index + boldMatch[0].length
+            );
+          }
+          // Italic text *text*
+          else {
+            const italicMatch = remaining.match(/\*(.*?)\*/);
+            if (italicMatch) {
+              const beforeItalic = remaining.substring(0, italicMatch.index);
+              if (beforeItalic)
+                parts.push(<span key={key++}>{beforeItalic}</span>);
+              parts.push(
+                <em key={key++} className="italic text-gray-700">
+                  {italicMatch[1]}
+                </em>
+              );
+              remaining = remaining.substring(
+                italicMatch.index + italicMatch[0].length
+              );
+            } else {
+              parts.push(<span key={key++}>{remaining}</span>);
+              break;
+            }
+          }
+        }
+
+        return parts.length > 0 ? parts : text;
+      };
+
+      const formattedContent = processInlineFormatting(processedLine);
+
+      // Create the appropriate element
+      if (element === "li") {
+        formattedElements.push(
+          <li key={lineIndex} className={className}>
+            <span className="absolute left-0 top-0">•</span>
+            {formattedContent}
+          </li>
+        );
+      } else {
+        const ElementType = element;
+        formattedElements.push(
+          <ElementType key={lineIndex} className={className}>
+            {formattedContent}
+          </ElementType>
+        );
+      }
+    });
+
+    return <div className="space-y-1">{formattedElements}</div>;
+  };
+
+  // Initialize chat when component mounts
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let pdf = params.get("pdf");
+    const title = params.get("title");
+    const id = params.get("id");
+
     if (pdf) {
-      pdf = pdf.replace("prsindia.org..", "prsindia.org"); // fix double dot
+      pdf = pdf.replace("prsindia.org..", "prsindia.org");
       setPdfLink(pdf);
+      setBillId(id || Date.now().toString());
+      setBillTitle(title || "Parliamentary Bill Analysis");
+
+      // Always auto-process since bills are now processed when clicked
+      setIsProcessing(true);
+      processBillAutomatically(pdf, title, id);
+
+      // Initialize with processing message
+      setMessages([
+        {
+          id: 1,
+          text: "Hello! I'm processing this parliamentary bill for analysis. Please wait while I extract and analyze the content...",
+          sender: "assistant",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+
+      setLoadingSummary(true);
     }
   }, []);
 
-  const openPdf = () => {
-    if (pdfLink) window.open(pdfLink, "_blank");
-  };
+  const processBillAutomatically = async (pdfUrl, title, id) => {
+    try {
+      const response = await fetch("/api/process-bill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          billId: id || Date.now().toString(),
+          pdfUrl: pdfUrl,
+          title: title || "Parliamentary Bill",
+        }),
+      });
 
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      text: "Welcome! I'm here to help you create accurate project estimates. What kind of project are you working on?",
-      sender: "assistant",
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    },
-  ]);
-  const [inputMessage, setInputMessage] = useState("");
-  const [showPdf, setShowPdf] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-  const [summary, setSummary] = useState(
-    "Conversation Summary\n\nYour chat summary will appear here as you interact. Key insights and important project details will be automatically captured."
-  );
-  const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null);
+      if (response.ok) {
+        const result = await response.json();
+        setProcessed(true);
+
+        // Use the summary from the API response or create a detailed one
+        const billSummary =
+          result.summary ||
+          `
+**${title || "Parliamentary Bill"}**
+
+✅ **Processing Complete** - This bill has been successfully analyzed and is ready for detailed discussion.
+
+**Available for Analysis:**
+• Full text content extracted and processed
+• Key provisions and sections identified  
+• Legislative context and implications analyzed
+• Ready to answer specific questions about the bill
+
+**What you can ask:**
+• "What are the main provisions of this bill?"
+• "What is the purpose and scope of this legislation?"
+• "What are the potential impacts of this bill?"
+• "Which sections deal with [specific topic]?"
+
+I'm ready to provide detailed analysis based on the actual bill content. What would you like to know?`;
+
+        setSummary(billSummary);
+
+        // Add appropriate success message based on whether it was already processed or newly processed
+        const isAlreadyProcessed = result.alreadyProcessed;
+        const successMessage = {
+          id: Date.now(),
+          text: isAlreadyProcessed
+            ? "🔄 **Bill Already Available!** This bill was previously processed and analyzed. I have access to all the content and can answer detailed questions about its provisions, implications, and specific sections. What would you like to know about this legislation?"
+            : "✅ **Processing Complete!** I've successfully analyzed this parliamentary bill and extracted all the key information. I can now answer detailed questions about its provisions, implications, and specific sections. What would you like to know about this legislation?",
+          sender: "assistant",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+        setMessages((prev) => [...prev, successMessage]);
+      } else {
+        throw new Error("Processing failed");
+      }
+    } catch (error) {
+      console.error("Error processing bill:", error);
+      setProcessed(false);
+      setSummary(
+        "There was an error processing this bill. Please try again later."
+      );
+
+      const errorMessage = {
+        id: Date.now(),
+        text: "❌ There was an error processing this bill. Please try refreshing the page or contact support.",
+        sender: "assistant",
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+      setLoadingSummary(false);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,11 +340,11 @@ const ChatInterface = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
-    if (inputMessage.trim() === "") return;
+  const handleSendMessage = async () => {
+    if (inputMessage.trim() === "" || isTyping) return;
 
-    const newMessage = {
-      id: messages.length + 1,
+    const userMessage = {
+      id: Date.now(),
       text: inputMessage,
       sender: "user",
       timestamp: new Date().toLocaleTimeString([], {
@@ -62,22 +353,50 @@ const ChatInterface = () => {
       }),
     };
 
-    setMessages([...messages, newMessage]);
+    setMessages((prev) => [...prev, userMessage]);
+    const currentInput = inputMessage;
     setInputMessage("");
     setIsTyping(true);
 
-    // Simulate assistant response
-    setTimeout(() => {
-      const responses = [
-        "That's a great question! Let me help you break down the project requirements and create a detailed estimate.",
-        "I'll need a bit more information to provide an accurate estimate. Could you tell me more about the project scope?",
-        "Based on what you've shared, I can help you create a comprehensive project timeline and cost estimate.",
-        "Excellent! I'll analyze your requirements and provide both time and budget estimates for your project.",
-      ];
+    try {
+      // Call the actual chat API instead of simulation
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: currentInput,
+          billId: billId,
+          billTitle: billTitle,
+        }),
+      });
 
-      const assistantResponse = {
-        id: messages.length + 2,
-        text: responses[Math.floor(Math.random() * responses.length)],
+      if (response.ok) {
+        const result = await response.json();
+
+        const assistantMessage = {
+          id: Date.now() + 1,
+          text:
+            result.response ||
+            "I apologize, but I couldn't generate a proper response. Please try asking your question differently.",
+          sender: "assistant",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        throw new Error("Failed to get response from AI");
+      }
+    } catch (error) {
+      console.error("Error getting AI response:", error);
+
+      const errorMessage = {
+        id: Date.now() + 1,
+        text: "I'm having trouble accessing the bill content right now. Please make sure the bill has been processed and try again.",
         sender: "assistant",
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -85,20 +404,10 @@ const ChatInterface = () => {
         }),
       };
 
-      setMessages((prev) => [...prev, assistantResponse]);
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-
-      // Update summary
-      setSummary(
-        (prev) =>
-          prev +
-          `\n\n${
-            assistantResponse.timestamp
-          } - User inquiry: "${inputMessage.substring(0, 50)}${
-            inputMessage.length > 50 ? "..." : ""
-          }"\nResponse provided with project guidance`
-      );
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -106,6 +415,10 @@ const ChatInterface = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const openPdf = () => {
+    if (pdfLink) window.open(pdfLink, "_blank");
   };
 
   const TypingIndicator = () => (
@@ -122,7 +435,7 @@ const ChatInterface = () => {
             style={{ animationDelay: "0.2s" }}
           ></div>
         </div>
-        <span className="text-xs text-gray-500 ml-2">Thinking...</span>
+        <span className="text-xs text-gray-500 ml-2">Analyzing...</span>
       </div>
     </div>
   );
@@ -130,445 +443,223 @@ const ChatInterface = () => {
   return (
     <>
       <Head>
-        <title>Rashtram AI</title>
-        <meta name="description" content="AI-powered project estimation tool" />
-        <link
-          href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"
-          rel="stylesheet"
+        <title>Rashtram AI - {billTitle}</title>
+        <meta
+          name="description"
+          content="AI-powered parliamentary bill analysis"
         />
       </Head>
 
-      <div className="flex h-screen bg-white">
-        {/* Main Chat Area */}
-        <div
-          className={`${
-            showPdf ? "w-1/2" : "flex-1"
-          } flex flex-col bg-white transition-all duration-300 ease-in-out`}
-          style={{ borderRight: showPdf ? "1px solid #B20F38" : "none" }}
-        >
+      <div className="flex h-screen bg-white overflow-hidden">
+        <div className="flex-1 flex flex-col bg-white min-w-0">
           {/* Header */}
-          <div
-            className="bg-white px-6 py-4 shadow-sm"
-            style={{ borderBottom: "1px solid #B20F38" }}
-          >
+          <div className="bg-white px-4 sm:px-6 py-4 shadow-sm border-b border-[#B20F38] flex-shrink-0">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
-                  style={{ backgroundColor: "#B20F38" }}
-                >
-                  <span className="text-white text-xl font-bold">RU</span>
+              <div className="flex items-center space-x-4 min-w-0">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg bg-[#B20F38] flex-shrink-0">
+                  <Brain className="text-white" size={24} />
                 </div>
-                <div>
-                  <h1
-                    className="text-2xl font-bold"
-                    style={{ color: "#B20F38" }}
-                  >
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl font-bold text-gray-900 truncate">
                     Rashtram AI
                   </h1>
-                  <p className="text-gray-600 text-sm">AI-powered Summarizer</p>
+                  <p className="text-sm text-gray-600 truncate">
+                    {billTitle || "Parliamentary Bill Analysis"}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-3">
-                <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-500">
-                  <div
-                    className="w-2 h-2 rounded-full animate-pulse"
-                    style={{ backgroundColor: "#B20F38" }}
-                  ></div>
-                  <span>Online</span>
-                </div>
-                <button
-                  className="text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
-                  style={{ backgroundColor: "#B20F38" }}
-                  onMouseEnter={(e) =>
-                    (e.target.style.backgroundColor = "#9a0d2f")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.target.style.backgroundColor = "#B20F38")
-                  }
-                  onClick={openPdf}
-                >
-                  View PDF
-                </button>
+
+              <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-500">
+                <div className="w-2 h-2 rounded-full animate-pulse bg-[#B20F38]"></div>
+                <span>AI Ready</span>
               </div>
             </div>
           </div>
 
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${
-                  message.sender === "user" ? "justify-end" : "justify-start"
-                } animate-fade-in-up`}
-              >
-                <div
-                  className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                    message.sender === "user" ? "order-1" : "order-2"
-                  }`}
-                >
-                  {message.sender === "assistant" && (
-                    <div className="flex items-center space-x-2 mb-1">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: "#B20F38" }}
-                      >
-                        <span className="text-white text-xs">AI</span>
-                      </div>
-                      <span className="text-xs text-gray-500 font-medium">
-                        Assistant
-                      </span>
-                    </div>
-                  )}
-
+          <div className="flex flex-1 min-h-0">
+            {/* Messages Area */}
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+                {messages.map((message) => (
                   <div
-                    className={`px-4 py-3 rounded-2xl shadow-sm ${
-                      message.sender === "user"
-                        ? "text-white rounded-br-md"
-                        : "bg-white text-gray-800 rounded-bl-md"
-                    }`}
-                    style={{
-                      backgroundColor:
-                        message.sender === "user" ? "#B20F38" : "white",
-                      border:
-                        message.sender === "assistant"
-                          ? "1px solid #f3f4f6"
-                          : "none",
-                    }}
-                  >
-                    <p className="text-sm leading-relaxed">{message.text}</p>
-                  </div>
-
-                  <div
-                    className={`flex items-center mt-1 space-x-1 ${
+                    key={message.id}
+                    className={`flex ${
                       message.sender === "user"
                         ? "justify-end"
                         : "justify-start"
+                    } animate-fade-in-up`}
+                  >
+                    <div
+                      className={`max-w-[85%] sm:max-w-md lg:max-w-lg xl:max-w-xl ${
+                        message.sender === "user" ? "order-1" : "order-2"
+                      }`}
+                    >
+                      {message.sender === "assistant" && (
+                        <div className="flex items-center space-x-2 mb-1">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center bg-[#B20F38]">
+                            <Brain className="text-white" size={12} />
+                          </div>
+                          <span className="text-xs text-gray-500 font-medium">
+                            AI Assistant
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        className={`px-4 py-3 rounded-2xl shadow-sm break-words ${
+                          message.sender === "user"
+                            ? "text-white rounded-br-md bg-[#B20F38]"
+                            : "bg-white text-gray-800 rounded-bl-md border border-gray-200"
+                        }`}
+                      >
+                        {message.sender === "assistant" ? (
+                          formatText(message.text)
+                        ) : (
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap overflow-wrap-anywhere">
+                            {message.text}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        className={`flex items-center mt-1 space-x-1 ${
+                          message.sender === "user"
+                            ? "justify-end"
+                            : "justify-start"
+                        }`}
+                      >
+                        <span className="text-xs text-gray-400">
+                          {message.timestamp}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {isTyping && <TypingIndicator />}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Area */}
+              <div className="bg-white px-4 sm:px-6 py-4 border-t border-gray-200 flex-shrink-0">
+                <div className="flex items-end space-x-4">
+                  <div className="flex-1 relative">
+                    <textarea
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder="Ask me anything about this bill..."
+                      className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-2xl resize-none transition-all duration-200 bg-white hover:border-gray-400 max-h-32 focus:border-[#B20F38] focus:ring-2 focus:ring-[#B20F38]/20 focus:outline-none"
+                      rows={1}
+                      disabled={isTyping}
+                    />
+                    <div className="absolute right-3 top-3 text-gray-400">
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={inputMessage.trim() === "" || isTyping}
+                    className={`p-3 rounded-2xl transition-all duration-200 transform hover:scale-105 ${
+                      inputMessage.trim() && !isTyping
+                        ? "text-white shadow-lg hover:shadow-xl bg-[#B20F38] hover:bg-[#9a0d2f]"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
                     }`}
                   >
-                    <span className="text-xs text-gray-400">
-                      {message.timestamp}
-                    </span>
-                    {message.sender === "user" && (
+                    {isTyping ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
                       <svg
-                        className="w-3 h-3 text-gray-400"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
                       >
                         <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
                         />
                       </svg>
                     )}
-                  </div>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
+                  <span>Press Enter to send, Shift + Enter for new line</span>
+                  <span>{inputMessage.length}/1000</span>
                 </div>
               </div>
-            ))}
-
-            {isTyping && <TypingIndicator />}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div
-            className="bg-white px-6 py-4"
-            style={{ borderTop: "1px solid #f3f4f6" }}
-          >
-            <div className="flex items-end space-x-4">
-              <div className="flex-1 relative">
-                <textarea
-                  ref={textareaRef}
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Describe your project or ask for an estimate..."
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-2xl resize-none transition-all duration-200 bg-white hover:border-gray-400 max-h-32"
-                  style={{
-                    "&:focus": {
-                      outline: "none",
-                      borderColor: "#B20F38",
-                      boxShadow: `0 0 0 2px rgba(178, 15, 56, 0.1)`,
-                    },
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = "#B20F38";
-                    e.target.style.boxShadow =
-                      "0 0 0 2px rgba(178, 15, 56, 0.1)";
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = "#d1d5db";
-                    e.target.style.boxShadow = "none";
-                  }}
-                  rows={1}
-                  // style={{ minHeight: "48px" }}
-                />
-                <div className="absolute right-3 top-3 text-gray-400">
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                    />
-                  </svg>
-                </div>
-              </div>
-
-              <button
-                onClick={handleSendMessage}
-                disabled={inputMessage.trim() === ""}
-                className={`p-3 rounded-2xl transition-all duration-200 transform hover:scale-105 ${
-                  inputMessage.trim()
-                    ? "text-white shadow-lg hover:shadow-xl"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                }`}
-                style={{
-                  backgroundColor: inputMessage.trim() ? "#B20F38" : "#e5e7eb",
-                }}
-                onMouseEnter={(e) => {
-                  if (inputMessage.trim()) {
-                    e.target.style.backgroundColor = "#9a0d2f";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (inputMessage.trim()) {
-                    e.target.style.backgroundColor = "#B20F38";
-                  }
-                }}
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg>
-              </button>
             </div>
 
-            <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
-              <span>Press Enter to send, Shift + Enter for new line</span>
-              <span>{inputMessage.length}/1000</span>
-            </div>
-          </div>
-        </div>
-
-        {/* PDF Viewer */}
-        {showPdf && (
-          <div
-            className="w-1/2 bg-white shadow-xl flex flex-col animate-slide-in-right"
-            style={{ borderLeft: "1px solid #B20F38" }}
-          >
-            <div
-              className="px-6 py-4"
-              style={{
-                backgroundColor: "#B20F38",
-                borderBottom: "1px solid #B20F38",
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-                    <svg
-                      className="w-4 h-4"
-                      style={{ color: "#B20F38" }}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
+            {/* Summary Panel */}
+            <div className="w-80 bg-gradient-to-b from-slate-50 to-white border-l border-slate-200 flex-col flex-shrink-0 hidden lg:flex">
+              <div className="p-6 border-b border-slate-200">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-10 h-10 bg-gradient-to-r from-[#B20F38] to-[#8A0C2D] rounded-xl flex items-center justify-center">
+                    <FileText size={20} className="text-white" />
                   </div>
                   <div>
-                    <h3 className="text-white font-semibold">
-                      Document Viewer
+                    <h3 className="text-slate-800 font-bold text-lg">
+                      Bill Summary
                     </h3>
-                    <p className="text-white opacity-80 text-sm">
-                      Project documents and estimates
+                    <p className="text-slate-600 text-sm">
+                      AI-generated overview
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowPdf(false)}
-                  className="text-white hover:text-gray-200 transition-colors duration-200"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
               </div>
-            </div>
 
-            <div className="flex-1 bg-white flex items-center justify-center">
-              <div className="text-center p-8">
-                <div
-                  className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg"
-                  style={{ backgroundColor: "#B20F38" }}
-                >
-                  <svg
-                    className="w-10 h-10 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              <div className="flex-1 overflow-y-auto p-6">
+                {isProcessing ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <Loader2
+                        size={16}
+                        className="animate-spin text-[#B20F38]"
+                      />
+                      <span className="text-sm text-[#B20F38] font-medium">
+                        Processing bill...
+                      </span>
+                    </div>
+                    <div className="h-4 bg-slate-200 rounded skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-3/4 skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-1/2 skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-2/3 skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-4/5 skeleton-shimmer"></div>
+                  </div>
+                ) : loadingSummary ? (
+                  <div className="space-y-4">
+                    <div className="h-4 bg-slate-200 rounded skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-3/4 skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded w-1/2 skeleton-shimmer"></div>
+                    <div className="h-4 bg-slate-200 rounded skeleton-shimmer"></div>
+                  </div>
+                ) : (
+                  <div className="text-slate-700 text-sm leading-relaxed">
+                    {formatText(summary)}
+                  </div>
+                )}
+              </div>
+
+              {pdfLink && (
+                <div className="p-6 border-t border-slate-200">
+                  <button
+                    onClick={openPdf}
+                    className="w-full btn-primary flex items-center justify-center space-x-2"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                    <FileText size={16} />
+                    <span>View Original PDF</span>
+                  </button>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                  No Document Selected
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Upload or select a project document to view here
-                </p>
-                <button
-                  className="text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg"
-                  style={{ backgroundColor: "#B20F38" }}
-                  onMouseEnter={(e) =>
-                    (e.target.style.backgroundColor = "#9a0d2f")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.target.style.backgroundColor = "#B20F38")
-                  }
-                >
-                  Upload Document
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sidebar */}
-        <div
-          className="w-80 bg-white shadow-xl flex flex-col"
-          style={{ borderLeft: "1px solid #B20F38" }}
-        >
-          {/* Summary Section */}
-          <div className="p-6" style={{ borderBottom: "1px solid #f3f4f6" }}>
-            <div className="flex items-center space-x-2 mb-4">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: "#B20F38" }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-800">Summary</h3>
-            </div>
-
-            <div
-              className="bg-gray-50 rounded-xl p-4 max-h-64 overflow-y-auto"
-              style={{ border: "1px solid #f3f4f6" }}
-            >
-              <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                {summary}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="p-6 flex-1">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center space-x-2">
-              <span>⚡</span>
-              <span>Quick Actions</span>
-            </h3>
-            <div className="space-y-3">
-              {[
-                { label: "Export Summary" },
-                { label: "Save Estimate" },
-                { label: "New Project" },
-                { label: "Copy Results" },
-              ].map((action, index) => (
-                <button
-                  key={index}
-                  className="w-full text-white p-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-md hover:shadow-lg"
-                  style={{ backgroundColor: "#B20F38" }}
-                  onMouseEnter={(e) =>
-                    (e.target.style.backgroundColor = "#9a0d2f")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.target.style.backgroundColor = "#B20F38")
-                  }
-                >
-                  {action.label}
-                </button>
-              ))}
+              )}
             </div>
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes fade-in-up {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes slide-in-right {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-
-        .animate-fade-in-up {
-          animation: fade-in-up 0.3s ease-out;
-        }
-
-        .animate-slide-in-right {
-          animation: slide-in-right 0.3s ease-out;
-        }
-      `}</style>
     </>
   );
 };

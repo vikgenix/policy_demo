@@ -11,6 +11,10 @@ import {
   ArrowRight,
   ExternalLink,
   Database,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  XCircle,
 } from "lucide-react";
 import ChatInterface from "./ChatInterface";
 
@@ -43,6 +47,38 @@ export default function BillsListUI() {
     window.open("https://prsindia.org/billtrack/", "_blank");
   };
 
+  // Get unique statuses from bills for filter options
+  const getUniqueStatuses = () => {
+    const statuses = bills.map((bill) => bill.status).filter(Boolean);
+    return [...new Set(statuses)];
+  };
+
+  // Get status icon and color
+  const getStatusIcon = (status) => {
+    switch (status?.toLowerCase()) {
+      case "passed":
+        return { icon: CheckCircle, color: "text-green-600 bg-green-100" };
+      case "pending":
+        return { icon: Clock, color: "text-yellow-600 bg-yellow-100" };
+      case "introduced":
+        return { icon: AlertCircle, color: "text-blue-600 bg-blue-100" };
+      case "rejected":
+        return { icon: XCircle, color: "text-red-600 bg-red-100" };
+      default:
+        return { icon: Clock, color: "text-gray-600 bg-gray-100" };
+    }
+  };
+
+  // Filter bills based on search term and status
+  const filteredBills = bills.filter((bill) => {
+    const matchesSearch = bill.title
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+    const matchesStatus =
+      selectedStatus === "All" || bill.status === selectedStatus;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div className="flex-1 bg-gradient-to-b from-white/80 to-slate-50/60 backdrop-blur-sm flex flex-col">
       {/* Header */}
@@ -54,7 +90,7 @@ export default function BillsListUI() {
             </div>
             <div>
               <h2 className="text-slate-800 text-xl font-bold text-gradient">
-                Rashtram Tracker
+                Bills Tracker
               </h2>
               <p className="text-slate-600 text-sm">
                 Track and analyze parliamentary bills
@@ -78,19 +114,42 @@ export default function BillsListUI() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search
-            size={18}
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500"
-          />
-          <input
-            type="text"
-            placeholder="Search bills by name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white/80 border border-slate-300/50 rounded-xl pl-12 pr-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none focus:border-[#B20F38]/50 focus:ring-2 focus:ring-[#B20F38]/20 transition-all duration-300"
-          />
+        {/* Search and Filters */}
+        <div className="space-y-4">
+          {/* Search */}
+          <div className="relative">
+            <Search
+              size={18}
+              className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500"
+            />
+            <input
+              type="text"
+              placeholder="Search bills by name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-white/80 border border-slate-300/50 rounded-xl pl-12 pr-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none focus:border-[#B20F38]/50 focus:ring-2 focus:ring-[#B20F38]/20 transition-all duration-300"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 text-slate-700">
+              <Filter size={16} />
+              <span className="text-sm font-medium">Filter by Status:</span>
+            </div>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="bg-white/80 border border-slate-300/50 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none focus:border-[#B20F38]/50 focus:ring-2 focus:ring-[#B20F38]/20 transition-all duration-300"
+            >
+              <option value="All">All Status</option>
+              {getUniqueStatuses().map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -100,45 +159,68 @@ export default function BillsListUI() {
           <p className="text-slate-600">Loading bills...</p>
         ) : (
           <div className="space-y-4">
-            {bills
-              .filter((bill) =>
-                bill.title.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-              .map((bill, idx) => (
-                <Link
-                  key={idx}
-                  href={{
-                    pathname: "../chat",
-                    query: { pdf: bill.pdf },
-                  }}
-                  target="_blank"
-                  className="block"
-                >
-                  <div className="glass-card p-6 hover-lift cursor-pointer group border border-slate-200/50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        {/* Bill Title */}
-                        <h3 className="text-slate-800 font-bold text-lg mb-2 group-hover:text-[#B20F38] transition-colors">
-                          {bill.title}
-                        </h3>
+            {filteredBills.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-slate-600">
+                  No bills found matching your criteria.
+                </p>
+              </div>
+            ) : (
+              filteredBills.map((bill, idx) => {
+                const statusInfo = getStatusIcon(bill.status);
+                const StatusIcon = statusInfo.icon;
 
-                        {/* Bill Link */}
-                        <p className="text-slate-600 text-sm leading-relaxed break-all">
-                          {bill.link}
-                        </p>
-                      </div>
+                return (
+                  <Link
+                    key={idx}
+                    href={{
+                      pathname: "../chat",
+                      query: { pdf: bill.pdf },
+                    }}
+                    target="_blank"
+                    className="block"
+                  >
+                    <div className="glass-card p-6 hover-lift cursor-pointer group border border-slate-200/50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          {/* Bill Title and Status */}
+                          <div className="flex items-start justify-between mb-3">
+                            <h3 className="text-slate-800 font-bold text-lg group-hover:text-[#B20F38] transition-colors flex-1 pr-4">
+                              {bill.title}
+                            </h3>
 
-                      {/* Action Arrow */}
-                      <div className="w-8 h-8 bg-gradient-to-r from-[#B20F38]/20 to-[#8A0C2D]/20 rounded-lg flex items-center justify-center group-hover:from-[#B20F38]/30 group-hover:to-[#8A0C2D]/30 transition-all duration-200">
-                        <ArrowRight
-                          size={16}
-                          className="text-[#B20F38] group-hover:translate-x-1 transition-transform"
-                        />
+                            {/* Status Badge */}
+                            {bill.status && (
+                              <div
+                                className={`flex items-center space-x-1 px-3 py-1 rounded-full ${statusInfo.color} transition-all duration-200`}
+                              >
+                                <StatusIcon size={14} />
+                                <span className="text-sm font-medium">
+                                  {bill.status}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Bill Link */}
+                          <p className="text-slate-600 text-sm leading-relaxed break-all">
+                            {bill.link}
+                          </p>
+                        </div>
+
+                        {/* Action Arrow */}
+                        <div className="w-8 h-8 bg-gradient-to-r from-[#B20F38]/20 to-[#8A0C2D]/20 rounded-lg flex items-center justify-center group-hover:from-[#B20F38]/30 group-hover:to-[#8A0C2D]/30 transition-all duration-200 ml-4">
+                          <ArrowRight
+                            size={16}
+                            className="text-[#B20F38] group-hover:translate-x-1 transition-transform"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })
+            )}
           </div>
         )}
       </div>
